@@ -1,16 +1,23 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { tap } from 'rxjs';
 import { AuthResponse } from '../models/auth-response.model';
 import { User } from '../models/user.model';
 
-/** Handles authentication and the current user's profile. */
+const TOKEN_KEY = 'gpc_token';
+
+/**
+ * Handles authentication and the current user's profile.
+ * The token is persisted in localStorage (survives a reload) and mirrored in a Signal
+ * (read synchronously and reactively by the guard, the interceptor and the templates).
+ */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
 
   readonly currentUser = signal<User | null>(null);
-  readonly token = signal<string | null>(localStorage.getItem('gpc_token'));
+  readonly token = signal<string | null>(localStorage.getItem(TOKEN_KEY));
+  readonly isAuthenticated = computed(() => this.token() !== null);
 
   login(email: string, password: string) {
     return this.http
@@ -37,13 +44,13 @@ export class AuthService {
   }
 
   logout(): void {
-    localStorage.removeItem('gpc_token');
+    localStorage.removeItem(TOKEN_KEY);
     this.token.set(null);
     this.currentUser.set(null);
   }
 
   private storeAuthentication(response: AuthResponse): void {
-    localStorage.setItem('gpc_token', response.token);
+    localStorage.setItem(TOKEN_KEY, response.token);
     this.token.set(response.token);
     this.currentUser.set(response.user);
   }
