@@ -16,6 +16,7 @@ export class TracksPageComponent {
   readonly pages = signal(1);
   readonly loading = signal(false);
   readonly audioUrl = signal('');
+  readonly error = signal('');
   readonly title = new FormControl('', { nonNullable: true });
   file?: File;
 
@@ -30,6 +31,7 @@ export class TracksPageComponent {
 
   load(): void {
     this.loading.set(true);
+    this.error.set('');
     this.service.list(this.page()).subscribe({
       next: (response) => {
         console.debug('[TracksPage] Pistes chargées', response.items.length);
@@ -39,6 +41,7 @@ export class TracksPageComponent {
       },
       error: (error) => {
         console.error('[TracksPage] Chargement impossible', error);
+        this.error.set('[TracksPage] Chargement impossible')
         this.loading.set(false);
       },
     });
