@@ -2,94 +2,114 @@
 
 Pour chaque mission, détailler et fournir des explications concernant : objectif; prompt principal; plan proposé par l'agent; vérifications réalisées par le binôme; erreurs ou propositions rejetées; fichiers effectivement modifiés; preuve de fonctionnement; ce que chaque membre sait maintenant expliquer sans l'agent.
 
-## Mission 0 — Cartographier l'application
+## Outil et modèle
 
-**Assistant et mode** : Claude Code (extension VS Code), modèle Claude Opus 5.
+Nous avons utilisé Claude Code dans VS Code, avec le modèle Claude Opus 5.5.
 
-**Objectif** : sans modifier le code, retrouver le composant racine, les routes, l'enregistrement de `HttpClient`, les modèles/services/pages et le mécanisme d'ajout du JWT ; produire un schéma annoté du flux « Se connecter » ; distinguer routes publiques et protégées.
+On voit le modèle actif avec la commande `/model`. On voit la consommation de la session avec `/cost`. Les tokens comptent le prompt, les fichiers lus, l'historique et la réponse. Une longue conversation consomme donc plus, même avec des questions courtes.
+
+Pour choisir un modèle, on peut demander conseil à l'assistant lui-même (voir `CONSEILS_POUR_UTIISER_ASSISTANT_AI.md`, partie 10). La documentation du fournisseur et l'enseignant peuvent aussi conseiller. Un modèle rapide suffit pour expliquer une notion. Un modèle plus puissant est utile pour analyser plusieurs fichiers ou chercher un bug difficile.
+
+## Mission 0 - Cartographier l'application
+
+**Objectif** : sans modifier le code, retrouver le composant racine, les routes, l'enregistrement de `HttpClient`, les modèles, services et pages, et le mécanisme qui ajoute le JWT. Faire un schéma du flux « Se connecter ». Séparer les routes publiques et protégées.
 
 **Prompt principal** : « Faisons la mission 0 du TP 1 Sujet etudiant. »
 
 **Démarche de l'agent** :
 
-1. Lecture de `SUJET_ETUDIANT_TP1.md`, `CONSEILS_POUR_UTIISER_ASSISTANT_AI.md`, `frontend-starter/CLAUDE.md` et `API_CONTRACT.md`.
-2. Lecture de tous les fichiers de `frontend-starter/src` (main, routes, composants, services, modèles, guard, intercepteur) et de `proxy.conf.json`.
-3. Lecture du backend : `src/app.js` (routes et middleware `auth`), `src/server.js`, `src/models/User.js`.
-4. Rédaction de la cartographie, du diagramme de séquence et du tableau des routes.
+1. Lecture du sujet, du guide d'usage de l'IA, de `frontend-starter/CLAUDE.md` et de `API_CONTRACT.md`.
+2. Lecture des fichiers de `frontend-starter/src` et de `proxy.conf.json`.
+3. Lecture du backend : `src/app.js`, `src/server.js`, `src/models/User.js`.
+4. Rédaction de la cartographie, du schéma et du tableau des routes.
 
-Aucune commande de build ou de test n'a été lancée : la mission est une analyse. Aucun secret (`.env`, URI MongoDB, JWT) n'a été lu ni transmis.
+Aucun build ni test n'a été lancé, car c'est une mission d'analyse. Le fichier `.env` n'a pas été lu.
 
-**Fichiers modifiés** : aucun fichier de code. Fichiers de documentation créés/modifiés : `MISSION_0_CARTOGRAPHIE.md`, `RAPPORT_IA_MODELE.md`.
+**Fichiers modifiés** : aucun fichier de code. Nous avons créé `MISSION_0_CARTOGRAPHIE.md` et ce rapport.
 
-**Production** : voir [MISSION_0_CARTOGRAPHIE.md](MISSION_0_CARTOGRAPHIE.md) (tableau des éléments, schéma du flux de connexion, routes publiques/protégées, traces, constats pour la mission 1).
+**Production** : voir [MISSION_0_CARTOGRAPHIE.md](MISSION_0_CARTOGRAPHIE.md).
 
-**Vérifications réalisées par le binôme** : _à compléter_ (ex. ouvrir chaque fichier cité et confirmer les numéros de ligne ; se connecter avec le compte démo et vérifier dans Network que `POST /api/auth/login` n'a pas besoin d'`Authorization` alors que `GET /api/tracks` l'a ; observer les logs `[http]` et `[auth]` dans le terminal du backend).
+**Vérifications réalisées par le binôme** :
 
-**Erreurs ou propositions rejetées** : _à compléter_.
+- Nous avons ouvert les fichiers cités pour vérifier les rôles décrits.
+- Nous nous sommes connectés avec le compte démo.
+- Dans Network, `POST /api/auth/login` part sans header `Authorization`. C'est normal, la route est publique.
+- Les logs `[http]` et `[auth]` s'affichent dans le terminal du backend, pas dans le navigateur.
 
-**Preuve** : voir les captures Network de la Mission 1 ([login réussi](captures/login-reussi.png), [login refusé](captures/login-echoue.png)) : `POST /api/auth/login` est une route publique, sans `Authorization`.
+**Erreurs ou propositions rejetées** : aucune proposition rejetée. Au premier essai, le login renvoyait `502 Bad Gateway`. Le backend n'était pas lancé, donc le proxy d'Angular ne trouvait rien sur le port 3000.
 
-**Ce que chaque membre sait expliquer sans l'agent** : _à compléter_ (ex. rôle de `provideHttpClient(withInterceptors(...))`, différence entre `authGuard` et le middleware `auth`, pourquoi l'Observable ne part qu'au `subscribe()`, rôle du proxy).
+**Preuve** : voir les captures de la mission 1 ([login réussi](captures/login-reussi.png), [login refusé](captures/login-echoue.png)).
 
-## Mission 1 — Inscription, connexion et profil
+**Ce que chaque membre sait expliquer sans l'agent** :
 
-**Assistant et mode** : Claude Code (extension VS Code), modèle Claude Opus 5.5.
+- `provideHttpClient(withInterceptors([...]))` rend `HttpClient` disponible et branche l'intercepteur.
+- L'intercepteur ajoute le JWT aux requêtes.
+- `authGuard` vérifie seulement qu'un token existe dans le navigateur. Le middleware `auth` du backend vérifie vraiment le token. C'est lui qui protège les données.
+- La requête HTTP ne part qu'au moment du `subscribe()`.
+- Le proxy de `ng serve` envoie les appels `/api` vers `localhost:3000`.
 
-**Objectif** : compléter la partie utilisateur du frontend (formulaires réactifs validés, JWT, Signal `currentUser`, redirections, déconnexion, profil, gestion du `401`).
+## Mission 1 - Inscription, connexion et profil
 
-**Prompt principal** : « Vas-y, que manque-t-il pour le TP1 ? » (après la cartographie de la mission 0).
+**Objectif** : compléter la partie utilisateur : formulaires validés, JWT, Signal `currentUser`, redirections, déconnexion, profil et gestion du `401`.
 
-**Démarche de l'agent** : relecture du sujet, des constats de `MISSION_0_CARTOGRAPHIE.md`, des règles de validation du backend (`User.js` : nom ≥ 2 caractères ; `app.js` : mot de passe ≥ 8 caractères, messages `400/401/409`), puis modifications du frontend uniquement et `ng build` (build OK).
+**Prompt principal** : « Vas-y, que manque-t-il pour le TP1 ? »
+
+**Démarche de l'agent** : l'agent a relu le sujet et les constats de la mission 0. Il a regardé les règles du backend : nom de 2 caractères minimum, mot de passe de 8 caractères minimum. Il a modifié seulement le frontend, puis lancé `ng build`. Le build passe.
 
 **Fichiers modifiés** :
 
 | Fichier | Changement |
 |---|---|
-| `shared/services/auth.service.ts` | `computed` `isAuthenticated`, constante `TOKEN_KEY` |
-| `shared/interceptors/auth.interceptor.ts` | pas de token sur `/api/auth/login` et `/register` ; sur `401` d'une route protégée : `logout()` puis redirection vers `/login?expired=true&returnUrl=…` |
-| `shared/guards/auth.guard.ts` | utilise `isAuthenticated()` et transmet `returnUrl` |
-| `shared/utils/api-error.ts` (nouveau) | message lisible à partir d'une `HttpErrorResponse` (message du backend, ou « Serveur injoignable » si statut `0`) |
-| `components/app/app.*` | menu selon l'état connecté : nom de l'utilisateur et bouton **Déconnexion**, ou Connexion/Inscription |
-| `components/login-page/*` | `form.invalid` bloque l'envoi, messages par champ, état `loading` (bouton désactivé, pas de double envoi), message « session expirée », redirection vers `returnUrl` |
-| `components/register-page/*` | mêmes validations que le backend (`minLength(2)` nom, `minLength(8)` mot de passe), messages, `loading` |
-| `components/profile-page/*` | chargement automatique de `GET /api/users/me` à l'ouverture, validation du nom, états chargement / succès / erreur |
-| `styles.css` | classes `.info`, `.success`, `.link-button` |
+| `shared/services/auth.service.ts` | ajout de `isAuthenticated` (computed) |
+| `shared/interceptors/auth.interceptor.ts` | pas de token sur login et register ; sur un `401`, déconnexion et retour à `/login` |
+| `shared/guards/auth.guard.ts` | garde la page demandée dans `returnUrl` |
+| `shared/utils/api-error.ts` (nouveau) | transforme une erreur HTTP en message lisible |
+| `components/app/app.*` | bouton Déconnexion et nom de l'utilisateur dans le menu |
+| `components/login-page/*` | validation, messages d'erreur, bouton désactivé pendant l'envoi, message « session expirée » |
+| `components/register-page/*` | mêmes règles que le backend, messages d'erreur |
+| `components/profile-page/*` | chargement automatique du profil, messages de succès et d'erreur |
+| `styles.css` | styles des messages et du bouton Déconnexion |
 
-Les `console.error` ne loguent plus l'objet d'erreur complet : ni mot de passe ni JWT n'apparaissent dans la console.
+Les logs de la console n'affichent jamais le mot de passe ni le token.
 
 **Réponses aux questions du sujet** :
 
-- *Routes backend utilisées par le TP1* : `POST /api/auth/register`, `POST /api/auth/login` (publiques), `GET /api/users/me` et `PUT /api/users/me` (protégées par le middleware `auth`).
-- *Où s'effectue « mise à jour du profil utilisateur » ?*
-  - Front : `profile-page.html` (formulaire, `(ngSubmit)="save()"`) → `profile-page.ts` `save()` → `auth.service.ts` `update(name)` (`PUT /api/users/me` puis `currentUser.set(user)`) → `auth.interceptor.ts` (ajout de `Authorization: Bearer`).
-  - Back : `backend/src/app.js`, middleware `auth()` (vérifie le JWT et place l'identifiant dans `req.auth.sub`) puis route `app.put("/api/users/me")` (`User.findByIdAndUpdate` avec `runValidators`) ; validation dans `backend/src/models/User.js` (`name` : `required`, `trim`, `minlength: 2`).
-- *Signal ou `localStorage` ?* Le `localStorage` est un stockage **persistant** du navigateur (chaînes de caractères, survit au rechargement, mais n'est pas réactif : Angular n'est pas prévenu quand il change). Un Signal est une valeur **en mémoire et réactive** : quand elle change, les templates, les `computed()` et le guard se mettent à jour. Elle est perdue au rechargement. Ici on combine les deux : le token est écrit dans `localStorage` pour survivre au rechargement et relu au démarrage dans le Signal `token`, qui pilote l'interface. `currentUser` n'existe qu'en Signal : il est rechargé depuis `/api/users/me`.
-- *Modèle et consommation de tokens* : _à compléter par le binôme_ (dans Claude Code : `/model` pour le modèle, `/cost` ou `/usage` pour la consommation).
+- Routes backend utilisées : `POST /api/auth/register` et `POST /api/auth/login` (publiques), `GET /api/users/me` et `PUT /api/users/me` (protégées).
+- Mise à jour du profil, côté front : le formulaire de `profile-page.html` appelle `save()` dans `profile-page.ts`. `save()` appelle `update(name)` dans `auth.service.ts`, qui envoie `PUT /api/users/me`. L'intercepteur ajoute le token.
+- Mise à jour du profil, côté back : dans `backend/src/app.js`, le middleware `auth` vérifie le token. La route `PUT /api/users/me` met ensuite le nom à jour avec `User.findByIdAndUpdate`. La règle sur le nom est dans `backend/src/models/User.js`.
+- Signal et `localStorage` : le `localStorage` garde le token après un rechargement de la page. Mais Angular n'est pas prévenu quand il change. Un Signal est une valeur en mémoire. Quand elle change, l'affichage se met à jour tout seul. Elle est perdue au rechargement. Nous utilisons les deux : le token est sauvé dans le `localStorage` et recopié dans un Signal au démarrage.
 
-**Vérifications réalisées par le binôme** : _à compléter_. Tests suggérés :
-1. Login avec un mauvais mot de passe → message « Identifiants incorrects ».
-2. Inscription avec un mot de passe de 5 caractères → message de validation, aucune requête dans Network.
-3. Inscription avec un email existant → « Email déjà utilisé » (`409`).
-4. Modifier le nom → le nom affiché dans l'en-tête change aussitôt (Signal).
-5. Dans DevTools > Application > Local Storage, remplacer `gpc_token` par `abc`, puis ouvrir Profil → `401`, retour à `/login` avec « session expirée ».
-6. Déconnexion → `gpc_token` supprimé, menu Connexion/Inscription affiché.
+**Vérifications réalisées par le binôme** :
+
+- Connexion avec le compte démo : statut `200`, puis redirection vers la bibliothèque.
+- Connexion avec un mauvais mot de passe : statut `401` et message « Identifiants incorrects ».
+- `GET /api/users/me` avec le token : statut `200`.
+- Ouvrir `http://localhost:4200/api/users/me` dans la barre d'adresse renvoie `401`. Le navigateur n'envoie pas le token, car il est dans le `localStorage` et pas dans un cookie. Seules les requêtes faites par `HttpClient` passent par l'intercepteur.
 
 **Preuve** (checkpoint Network) :
 
-| Requête | Méthode / URL | Corps JSON envoyé | Statut | Réponse | `Authorization` |
+| Requête | Méthode / URL | Corps envoyé | Statut | Réponse | `Authorization` |
 |---|---|---|---|---|---|
-| Connexion réussie | `POST /api/auth/login` | `{email, password}` (valeurs non capturées) | 200 OK | `{token, user}` (341 octets) | absent (route publique) |
-| Connexion refusée | `POST /api/auth/login` | `{email, password}` (mauvais mot de passe) | 401 Unauthorized | `{"message":"Identifiants incorrects"}` (37 octets) | absent |
-| Lecture du profil | `GET /api/users/me` | aucun | _à compléter_ | `{id, name, email, createdAt}` | présent : `Bearer ***` |
+| Connexion réussie | `POST /api/auth/login` | `{email, password}` | 200 | `{token, user}` | absent |
+| Connexion refusée | `POST /api/auth/login` | `{email, password}` | 401 | `{"message":"Identifiants incorrects"}` | absent |
+| Lecture du profil | `GET /api/users/me` | aucun | 200 | `{id, name, email, createdAt}` | `Bearer ***` |
 
 ![Connexion réussie](captures/login-reussi.png)
 
 ![Connexion refusée](captures/login-echoue.png)
 
-_À ajouter : capture de `GET` ou `PUT /api/users/me` (valeur du token masquée)._
+Capture de `/api/users/me` à ajouter : `captures/users-me.png`.
 
-Remarque : ouvrir `http://localhost:4200/api/users/me` dans la barre d'adresse renvoie `401 Authentification requise`, car une navigation ne passe pas par `HttpClient` et donc pas par l'intercepteur ; le JWT, stocké dans `localStorage` (pas un cookie), n'est pas envoyé.
+**Erreurs ou propositions rejetées** :
 
-**Erreurs ou propositions rejetées** : _à compléter_.
+- Le backend ne démarrait pas : MongoDB Atlas refusait la connexion. Notre adresse IP n'était pas autorisée. Nous l'avons ajoutée dans Atlas (Network Access).
+- Le premier script de l'agent pour écrire les fichiers a échoué. Il a refait les fichiers un par un.
+- Les identifiants démo restent pré-remplis dans le formulaire de connexion. C'est pratique en TP. Il faudra les enlever pour une vraie application.
 
-**Ce que chaque membre sait expliquer sans l'agent** : _à compléter_.
+**Ce que chaque membre sait expliquer sans l'agent** :
+
+- Le trajet d'une connexion : composant, `AuthService`, intercepteur, proxy, Express, MongoDB.
+- Pourquoi un composant n'appelle pas `HttpClient` directement : il passe par le service.
+- Comment un `401` renvoie vers la page de connexion.
+- La différence entre un Signal et le `localStorage`.
+- Pourquoi la validation dans Angular ne remplace pas celle du backend.
