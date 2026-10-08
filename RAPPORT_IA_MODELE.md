@@ -113,3 +113,100 @@ Capture de `/api/users/me` à ajouter : `captures/users-me.png`.
 - Comment un `401` renvoie vers la page de connexion.
 - La différence entre un Signal et le `localStorage`.
 - Pourquoi la validation dans Angular ne remplace pas celle du backend.
+
+---
+
+# Rapport d'usage de l'IA - TP2 et TP3 (phase 0 du projet)
+
+Les missions 2 à 7 ont été réalisées en une seule séance avec Claude Code (modèle Claude Fable 5.1), avant de démarrer le projet WebJam Studio (TP4). Le backend n'a pas été modifié et le contrat `API_CONTRACT.md` est inchangé.
+
+**Prompt principal** : « Voici le cahier des charges du projet et les sujets des TP. Les TP2 et TP3 n'ont pas été faits : termine d'abord ce socle (validation de l'upload, états, cards, suppression avec confirmation et SnackBar, progression d'upload, tests) avant d'attaquer le studio. »
+
+**Plan proposé par l'agent** (validé par le binôme) : installer Angular Material (SnackBar, dialogue de confirmation, barre de progression) ; enrichir `TrackService` (`delete`, `upload` avec événements) ; réécrire `TracksPageComponent` (validation, états, cards, suppression, lecture) ; ajouter Vitest + `jsdom` et cinq fichiers de tests ; garder le backend intact.
+
+**Fichiers modifiés ou créés** :
+
+| Fichier | Changement |
+|---|---|
+| `frontend-starter/package.json`, `angular.json` | `@angular/material`, `@angular/cdk`, `jsdom` ; thème Material `azure-blue` ; builder de test `@angular/build:unit-test` avec `tsconfig.spec.json` |
+| `tsconfig.spec.json` (nouveau), `tsconfig.app.json` | les `*.spec.ts` sont compilés pour les tests et exclus du build |
+| `shared/services/track.service.ts` | `upload()` renvoie les `HttpEvent` (`reportProgress: true, observe: 'events'`) ; `delete(id)` → `DELETE /api/tracks/:id` |
+| `shared/utils/audio-file.ts` (nouveau) | `validateAudioFile()` : mêmes types MIME et même limite de 25 Mo que `backend/src/app.js` |
+| `shared/models/upload-state.model.ts` (nouveau) | état `idle / uploading / success / error` + pourcentage |
+| `shared/pipes/file-size.pipe.ts` (nouveau) | taille lisible (o, Ko, Mo) |
+| `shared/services/notification.service.ts` (nouveau) | enveloppe `MatSnackBar` (`success`, `error`) |
+| `components/confirm-dialog/*` (nouveau) | dialogue de confirmation générique (`MatDialog`) |
+| `components/tracks-page/*` | réécriture : voir missions ci-dessous |
+| `src/styles.css` | couleurs des SnackBar |
+| 5 fichiers `*.spec.ts` | tests Vitest (voir mission 7) |
+
+## Mission 2 - Bibliothèque paginée
+
+Déjà en place dans le starter : `TrackService.list(page, limit)` transmet bien `page` et `limit`, la page utilise des Signals (`tracks`, `page`, `pages`, `loading`, `error`) et `@for` / `@empty` / `@if`. Ajouts : boutons « Précédent / Suivant » désactivés aussi pendant le chargement, message d'erreur lisible via `apiErrorMessage`, retour automatique à la page précédente si une suppression vide la page courante.
+
+**Checkpoint Network** : chaque clic sur « Suiv. » envoie `GET /api/tracks?page=2&limit=5` (capture à ajouter : `captures/pagination.png`).
+
+## Mission 3 - Upload et lecture audio
+
+**Flux identifié** : `choose()` lit le `File` de l'`<input type="file">` → `send()` → `TrackService.upload()` construit le `FormData` (`audio`, `title`) → `HttpClient.post` → intercepteur (JWT) → `POST /api/tracks` (Multer : champ `audio`, types MIME, 25 Mo). Lecture : `play()` → `TrackService.audio(id)` (`responseType: 'blob'`) → `URL.createObjectURL(blob)` → `<audio [src]>` ; l'ancienne URL est révoquée à chaque lecture et à la destruction du composant (`DestroyRef.onDestroy`).
+
+**Pourquoi une URL directe dans `src` ne marche pas** : le navigateur charge `src` tout seul, sans passer par `HttpClient`, donc sans l'intercepteur ni le header `Authorization`. Le backend répond `401`. On passe donc par `HttpClient` pour obtenir un `Blob`, puis par une ObjectURL.
+
+**Validation front ajoutée** : `validateAudioFile()` refuse avant tout appel HTTP un type non audio ou un fichier de plus de 25 Mo, avec un message clair. Elle améliore l'expérience (réponse immédiate) mais ne remplace pas le backend : n'importe qui peut envoyer une requête sans passer par notre page.
+
+**Interface pendant l'envoi** : bouton et champ fichier désactivés, double soumission ignorée (`status === 'uploading'`), erreurs serveur affichées (`400` « Format audio non accepté »), message de succès, formulaire vidé puis retour à la page 1.
+
+**Cards** : titre, nom original, type MIME, taille (`fileSize`), date (`DatePipe`), actions « Lire » et « Supprimer » ; la card en cours de lecture est surlignée, « En cours : titre » est affiché et l'événement `(error)` de `<audio>` donne un message compréhensible.
+
+**Réponses aux questions mémoire / buffering / streaming** :
+
+- Le backend utilise `res.sendFile` : Express lit le fichier depuis le disque en flux (stream), il ne charge pas tout le fichier en mémoire.
+- Avec `responseType: 'blob'`, le composant reçoit le fichier **une seule fois, à la fin** du téléchargement complet : pas de lecture progressive.
+- Avec 100 morceaux, seules les métadonnées sont chargées par `GET /api/tracks` ; `audio()` n'est appelé qu'au clic sur « Lire ». Aucun fichier audio n'est en mémoire avant cela.
+- 100 éléments `<audio src="...">` déclencheraient potentiellement 100 téléchargements (ou au moins 100 requêtes de métadonnées), sans JWT, et le navigateur ferait lui-même le buffering.
+- `URL.createObjectURL` garde le `Blob` vivant en mémoire tant que l'URL n'est pas révoquée : sans `revokeObjectURL`, chaque lecture ajoute un fichier entier en mémoire.
+
+**Preuves** : captures à ajouter `captures/upload-multipart.png` (Network, requête multipart avec `audio` et `title`) et `captures/lecture-audio.png` (réponse `audio/mpeg`).
+
+## Mission 5 - Suppression d'une piste
+
+Flux : card → `remove(track)` ouvre `ConfirmDialogComponent` → si confirmé, `deletingId` est positionné (bouton « Suppression… », autres boutons désactivés) → `TrackService.delete(id)` → `DELETE /api/tracks/:id` → SnackBar de succès → `load()`. Un `404` (piste supprimée dans un autre onglet, ou piste d'un autre utilisateur) affiche « Cette piste n'existe plus : la liste a été actualisée » et recharge la liste. Toute autre erreur affiche le message du serveur.
+
+**Pourquoi le guard et l'interface ne suffisent pas** : `authGuard` vérifie seulement la présence d'un token dans le navigateur, et le bouton « Supprimer » n'est qu'un confort. Un utilisateur peut envoyer `DELETE /api/tracks/<id>` à la main. C'est le middleware `auth` du backend qui vérifie la signature et l'expiration du JWT, puis `Track.findOneAndDelete({ _id, ownerId: req.auth.sub })` qui garantit qu'on ne supprime que sa propre piste.
+
+**Preuve** : capture à ajouter `captures/delete.png` (Network : `DELETE /api/tracks/:id` → `204`).
+
+## Mission 6 - Progression de l'upload
+
+`upload()` utilise `reportProgress: true` et `observe: 'events'`. Le composant reçoit alors plusieurs événements : `HttpEventType.UploadProgress` (`loaded`, `total`) puis `HttpEventType.Response` (la piste créée). Le pourcentage est `Math.round(100 * loaded / total)` ; il alimente une `mat-progress-bar` et le libellé du bouton.
+
+**Pourquoi ce n'est pas une requête classique** : un `Observable` HTTP ordinaire émet une seule valeur (le corps de la réponse). Ici l'`Observable` émet une suite d'événements intermédiaires avant la réponse finale ; il faut donc distinguer les types d'événements dans `next`, et l'état « réussite » ne se déclenche qu'à l'événement `Response`. Ni le mot de passe ni le JWT ne sont affichés dans la console ou l'interface.
+
+**Preuve** : capture à ajouter `captures/upload-progress.png` (barre de progression et événements dans Network).
+
+## Mission 7 - Tests automatisés
+
+Commande : `npm test` dans `frontend-starter` (Vitest via `@angular/build:unit-test`, environnement `jsdom`). Résultat observé : **5 fichiers, 20 tests, tous verts**.
+
+| Fichier | Ce qui est vérifié |
+|---|---|
+| `shared/services/auth.service.spec.ts` | `login()` → `POST /api/auth/login` avec `{email, password}` ; token stocké dans le Signal et le `localStorage` ; rien n'est stocké sur `401` ; `logout()` nettoie tout |
+| `shared/services/track.service.spec.ts` | `list(2, 10)` transmet `page=2` et `limit=10` ; `delete('abc')` → `DELETE /api/tracks/abc` ; `upload()` envoie un multipart `audio` + `title` et émet l'événement de progression puis la réponse ; `audio()` demande un `blob` |
+| `shared/interceptors/auth.interceptor.spec.ts` | header `Authorization: Bearer <token>` ajouté aux routes protégées ; absent sans token et sur `/api/auth/login` ; un `401` déconnecte et redirige vers `/login` |
+| `shared/guards/auth.guard.spec.ts` | sans token → `UrlTree` `/login?returnUrl=%2Ftracks` ; avec token → `true` |
+| `components/tracks-page/tracks-page.spec.ts` | erreur affichée après un échec HTTP ; cards rendues ; suppression confirmée → `DELETE` puis rechargement ; suppression annulée → aucune requête ; `404` → notification + rechargement ; progression d'upload (30 %) puis succès et rechargement ; erreur `400` affichée ; fichier invalide refusé sans requête |
+
+**Pourquoi ces tests n'ont pas besoin de MongoDB** : `provideHttpClientTesting()` remplace le transport HTTP par `HttpTestingController`. Le test intercepte chaque requête (`expectOne`), vérifie méthode, URL, paramètres, headers et corps, puis fabrique la réponse (`flush`, `event`). Aucun serveur ne tourne.
+
+**Test d'intercepteur / de guard** : on vérifie un comportement transversal (header ajouté, redirection) indépendamment d'une page. **Unitaire vs intégration** : un test unitaire isole une classe (service, guard) avec des dépendances simulées ; un test d'intégration (ici `tracks-page.spec.ts`) fait collaborer le composant, le template, le service et le faux transport HTTP, mais toujours sans backend réel.
+
+**Vérifications réalisées par le binôme** : `npm run build` passe ; `npm test` passe ; vérifications manuelles dans le navigateur (upload avec barre de progression, suppression confirmée, cas 404 en supprimant depuis un second onglet).
+
+**Erreurs ou propositions rejetées** : l'agent avait d'abord ajouté un lien « Ouvrir dans le studio » sur chaque card ; il a été retiré car la route n'existe pas encore (phase suivante du projet). Les dépendances audio prévues pour le studio (`signalsmith-stretch`, `demucs-web`, `onnxruntime-web`) ont été désinstallées pour garder cette phase propre.
+
+**Ce que chaque membre sait expliquer sans l'agent** :
+
+- la différence entre `observe: 'body'` et `observe: 'events'`, et le calcul du pourcentage ;
+- pourquoi la suppression passe par `TrackService` et pourquoi seul le backend sécurise réellement la suppression ;
+- pourquoi une URL directe dans `<audio src>` ne reçoit pas le JWT, et pourquoi on révoque les ObjectURL ;
+- comment `HttpTestingController` permet de tester sans backend ni MongoDB.

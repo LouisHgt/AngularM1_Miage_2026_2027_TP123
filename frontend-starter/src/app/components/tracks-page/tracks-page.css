@@ -1,1 +1,25 @@
 :host { display: block; }
+
+.upload-progress { display: grid; gap: 0.3rem; margin-top: 0.8rem; }
+
+.track-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.track-card {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 0.8rem 1rem; border: 1px solid #e1ebe7; border-radius: 12px; background: #fbfdfc;
+}
+.track-card.playing { border-color: #1d755e; box-shadow: inset 4px 0 0 #1d755e; }
+.track-meta { display: grid; gap: 0.15rem; min-width: 0; }
+.track-meta small { color: #61756f; overflow-wrap: anywhere; }
+.track-actions { display: flex; gap: 0.4rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.track-actions button, .button-link { padding: 0.5rem 0.8rem; font-size: 0.9rem; }
+.button-link {
+  display: inline-block; color: white; background: #276c57; border-radius: 8px; text-decoration: none;
+}
+button.danger { background: #b3261e; }
+.empty { color: #61756f; padding: 1rem 0; }
+.now-playing { margin: 0.8rem 0 0.4rem; }
+
+@media (max-width: 720px) {
+  .track-card { flex-direction: column; align-items: stretch; }
+  .track-actions { justify-content: flex-start; }
+}

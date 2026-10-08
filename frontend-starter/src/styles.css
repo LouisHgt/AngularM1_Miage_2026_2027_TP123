@@ -36,3 +36,7 @@ audio { width: 100%; }
   nav { margin-top: 1rem; }
   .grid .card { margin-bottom: 1rem; }
 }
+
+/* Angular Material SnackBar variants (NotificationService) */
+.snack-success { --mat-snack-bar-container-color: #1d755e; --mat-snack-bar-supporting-text-color: white; --mat-snack-bar-button-color: #e6f4ef; }
+.snack-error { --mat-snack-bar-container-color: #8b1d1d; --mat-snack-bar-supporting-text-color: white; --mat-snack-bar-button-color: #ffe0e0; }
