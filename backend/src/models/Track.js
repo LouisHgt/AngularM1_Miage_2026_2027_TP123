@@ -1,10 +1,6 @@
 import mongoose from "mongoose";
 
-/*
- * Ce schéma conserve les métadonnées d'une piste. Le fichier audio lui-même
- * reste sur le disque ; storedName contient le nom technique utilisé côté
- * serveur et n'est jamais exposé par toPublic().
- */
+/* Ce schéma conserve les métadonnées et l'identifiant du fichier dans GridFS. */
 const schema = new mongoose.Schema(
   {
     ownerId: {
@@ -15,7 +11,7 @@ const schema = new mongoose.Schema(
     },
     title: { type: String, required: true, trim: true },
     originalName: { type: String, required: true },
-    storedName: { type: String, required: true, select: false },
+    gridFsId: { type: mongoose.Schema.Types.ObjectId, required: true, select: false },
     mimeType: { type: String, required: true },
     size: { type: Number, required: true, min: 0 },
   },

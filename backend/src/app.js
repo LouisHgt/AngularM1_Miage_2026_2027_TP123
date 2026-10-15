@@ -2,32 +2,26 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import jwt from "jsonwebtoken";
-import fs from "node:fs";
-import fsPromises from "node:fs/promises";
-import path from "node:path";
-import crypto from "node:crypto";
+import mongoose from "mongoose";
+import { Readable } from "node:stream";
 import { User } from "./models/User.js";
 import { Track } from "./models/Track.js";
 
-// Les fichiers audio restent sur le disque du serveur dans ce TP.
-// MongoDB ne conserve que leurs métadonnées : titre, nom, taille, etc.
-const UPLOADS = path.resolve("data/uploads");
+const GRIDFS_BUCKET = "audio";
 
-try {
-  // mkdirSync est utilisé au démarrage : l'application doit disposer de ce
-  // dossier avant de pouvoir accepter le premier upload.
-  fs.mkdirSync(UPLOADS, { recursive: true });
-  console.log(`[startup] Dossier des uploads prêt : ${UPLOADS}`);
-} catch (error) {
-  console.error("[startup] Impossible de créer le dossier des uploads", error);
-  throw error;
+function getAudioBucket() {
+  const database = mongoose.connection.db;
+  if (!database) {
+    throw new Error("Connexion MongoDB requise pour accéder aux fichiers audio");
+  }
+  return new mongoose.mongo.GridFSBucket(database, { bucketName: GRIDFS_BUCKET });
 }
 
 // Ce secret reste côté serveur. Il ne doit jamais être copié dans Angular.
 const SECRET = process.env.JWT_SECRET || "tp1-development-secret";
 
 // La taille maximale d'un fichier audio est de 25 Mo. Les fichiers plus gros
-// sont refusés par Multer avant d'être écrits sur le disque.
+// sont refusés par Multer avant leur écriture dans GridFS.
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 // Les types MIME autorisés correspondent aux formats demandés dans le sujet.
@@ -38,6 +32,7 @@ const allowed = new Set([
   "audio/ogg",
   "audio/mp4",
   "audio/x-m4a",
+  "audio/webm",
 ]);
 
 /**
@@ -81,22 +76,11 @@ function auth(req, res, next) {
  * par Express et traite les fichiers envoyés par un formulaire HTML.
  * Documentation officielle : https://github.com/expressjs/multer
  *
- * diskStorage indique que Multer écrit directement le fichier sur disque.
- * Chaque callback doit appeler cb(error, value) : null signifie qu'il n'y a
- * pas d'erreur. Le nom aléatoire évite les collisions entre utilisateurs.
+ * memoryStorage conserve temporairement le fichier dans la mémoire du backend,
+ * avant son écriture dans GridFS. Le fichier ne dépend donc plus d'un disque
+ * local propre à un poste.
  */
-const storage = multer.diskStorage({
-  destination: (_request, _file, callback) => {
-    console.debug(`[multer] Destination sélectionnée : ${UPLOADS}`);
-    callback(null, UPLOADS);
-  },
-  filename: (_request, file, callback) => {
-    const filename =
-      crypto.randomUUID() + path.extname(file.originalname).toLowerCase();
-    console.log(`[multer] Nom de stockage généré pour ${file.originalname}`);
-    callback(null, filename);
-  },
-});
+const storage = multer.memoryStorage();
 
 /*
  * limits.fileSize protège le serveur contre les fichiers trop volumineux.
@@ -271,7 +255,7 @@ export function createApp() {
   app.get("/api/tracks", auth, async (req, res, next) => {
     try {
       const page = Math.max(1, Number(req.query.page) || 1);
-      const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 5));
+      const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 5));  
       const filter = { ownerId: req.auth.sub };
 
       console.log(`[tracks] Lecture page=${page}, limit=${limit}, user=${req.auth.sub}`);
@@ -324,29 +308,45 @@ export function createApp() {
    * Reçoit le champ multipart audio et le champ texte title.
    * upload.single("audio") traite un seul fichier et le place dans req.file,
    * tandis que req.body.title contient le champ texte associé.
-   * C'est ici qu'est fait l'upload de fichiers sur le serveur. 
+  * C'est ici qu'est fait l'upload de fichiers dans GridFS.
    * Le middleware auth vérifie le JWT avant d'accepter l'upload.
    * Le middleware upload.single("audio") traite le fichier audio envoyé dans le champ "audio" du formulaire
    * ou de l'appel depuis le frontend avec un objet FormData.
-   * Si le fichier est accepté, il est stocké sur le disque et ses métadonnées sont enregistrées 
-   * dans MongoDB.
+  * Si le fichier est accepté, son contenu est stocké dans GridFS et ses
+  * métadonnées sont enregistrées dans MongoDB.
    */
   app.post(
     "/api/tracks",
     auth,
     upload.single("audio"),
     async (req, res, next) => {
+      let bucket;
+      let gridFsId;
       try {
         if (!req.file) {
           console.warn(`[tracks] Upload sans fichier par ${req.auth.sub}`);
           return res.status(400).json({ message: "Fichier audio requis" });
         }
 
+        bucket = getAudioBucket();
+        const uploadStream = bucket.openUploadStream(req.file.originalname, {
+          contentType: req.file.mimetype,
+          metadata: { ownerId: req.auth.sub },
+        });
+        gridFsId = uploadStream.id;
+
+        await new Promise((resolve, reject) => {
+          Readable.from(req.file.buffer)
+            .pipe(uploadStream)
+            .on("finish", resolve)
+            .on("error", reject);
+        });
+
         const track = await Track.create({
           ownerId: req.auth.sub,
           title: req.body.title || req.file.originalname,
           originalName: req.file.originalname,
-          storedName: req.file.filename,
+          gridFsId,
           mimeType: req.file.mimetype,
           size: req.file.size,
         });
@@ -355,21 +355,14 @@ export function createApp() {
         res.status(201).json(track.toPublic());
       } catch (error) {
         console.error("[tracks] Erreur après l'enregistrement du fichier", error);
-
-        // Si MongoDB échoue après l'écriture sur disque, on tente de nettoyer
-        // le fichier orphelin. L'erreur de nettoyage est elle aussi loguée.
-        if (req.file) {
-          const uploadedPath = path.join(UPLOADS, req.file.filename);
+        if (bucket && gridFsId) {
           try {
-            await fsPromises.unlink(uploadedPath);
-            console.log(`[tracks] Fichier temporaire supprimé : ${uploadedPath}`);
+            await bucket.delete(gridFsId);
           } catch (cleanupError) {
-            console.error(
-              `[tracks] Impossible de supprimer le fichier temporaire ${uploadedPath}`,
-              cleanupError,
-            );
+            console.error(`[tracks] Fichier GridFS orphelin : ${gridFsId}`, cleanupError);
           }
         }
+
         next(error);
       }
     },
@@ -381,56 +374,61 @@ export function createApp() {
       const track = await Track.findOne({
         _id: req.params.id,
         ownerId: req.auth.sub,
-      }).select("+storedName");
+      }).select("+gridFsId");
 
       if (!track) {
         console.warn(`[tracks] Audio introuvable ou interdit : ${req.params.id}`);
         return res.status(404).json({ message: "Piste inconnue" });
       }
+      if (!track.gridFsId) {
+        return res.status(410).json({
+          message: "Cette piste doit être réimportée dans le stockage partagé",
+        });
+      }
 
-      const audioPath = path.join(UPLOADS, track.storedName);
       res.type(track.mimeType);
-      // Ce callback permet de loguer le succès ou l'erreur du transfert.
-      res.sendFile(audioPath, (error) => {
-        if (error) {
-          console.error(`[tracks] Erreur d'envoi audio ${track.id}`, error);
-          if (!res.headersSent) next(error);
-          return;
-        }
-        console.log(`[tracks] Audio envoyé : ${track.id}`);
+      const downloadStream = getAudioBucket().openDownloadStream(track.gridFsId);
+      downloadStream.on("error", (error) => {
+        console.error(`[tracks] Erreur d'envoi audio ${track.id}`, error);
+        if (!res.headersSent) next(error);
+        else res.destroy(error);
       });
+      downloadStream.pipe(res);
     } catch (error) {
       console.error("[tracks] Erreur de préparation du flux audio", error);
       next(error);
     }
   });
 
-  /** Supprime la métadonnée et le fichier physique correspondant. */
+  /** Supprime le fichier GridFS puis sa métadonnée. */
   app.delete("/api/tracks/:id", auth, async (req, res, next) => {
     try {
-      const track = await Track.findOneAndDelete({
+      const track = await Track.findOne({
         _id: req.params.id,
         ownerId: req.auth.sub,
-      }).select("+storedName");
+      }).select("+gridFsId");
 
       if (!track) {
         console.warn(`[tracks] Suppression impossible : ${req.params.id}`);
         return res.status(404).json({ message: "Piste inconnue" });
       }
+      if (!track.gridFsId) {
+        return res.status(410).json({
+          message: "Cette piste doit être réimportée dans le stockage partagé",
+        });
+      }
 
-      const audioPath = path.join(UPLOADS, track.storedName);
       try {
-        await fsPromises.unlink(audioPath);
-        console.log(`[tracks] Fichier supprimé : ${audioPath}`);
+        await getAudioBucket().delete(track.gridFsId);
+        console.log(`[tracks] Fichier GridFS supprimé : ${track.gridFsId}`);
       } catch (error) {
-        // L'exception n'est volontairement pas ignorée : l'administrateur doit
-        // voir ce fichier orphelin si sa suppression échoue.
-        console.error(`[tracks] Fichier audio non supprimé : ${audioPath}`, error);
+        console.error(`[tracks] Fichier GridFS non supprimé : ${track.gridFsId}`, error);
         return res.status(500).json({
           message: "Métadonnée supprimée, mais fichier audio non supprimé",
         });
       }
 
+      await Track.deleteOne({ _id: track._id });
       res.status(204).end();
     } catch (error) {
       console.error("[tracks] Erreur de suppression", error);

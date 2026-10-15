@@ -2,7 +2,7 @@
 
 Base : `/api`. Sauf inscription et connexion, envoyer `Authorization: Bearer <token>`.
 
-Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utilise Mongoose et MongoDB. MongoDB conserve les utilisateurs et métadonnées ; les octets des fichiers audio restent sur le disque du serveur.
+Le contrat HTTP ne dépend pas du choix de persistance : le backend utilise Mongoose et MongoDB. Les utilisateurs, les métadonnées et les octets des fichiers audio sont stockés dans MongoDB ; les audios sont enregistrés dans le bucket GridFS `audio` (`audio.files` et `audio.chunks`). Aucun chemin de fichier local n'est nécessaire.
 
 | Méthode | Route | Requête | Réponse principale |
 |---|---|---|---|
@@ -16,6 +16,6 @@ Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utili
 | GET | `/tracks/:id/audio` | JWT | flux audio |
 | DELETE | `/tracks/:id` | JWT | `204` (bonus) |
 
-`Page<Track>` contient `items`, `page`, `limit`, `total` et `pages`. Formats acceptés : MP3, WAV, OGG et M4A, 25 Mo maximum.
+`Page<Track>` contient `items`, `page`, `limit`, `total` et `pages`. Formats acceptés : MP3, WAV, OGG, M4A et WebM, 25 Mo maximum.
 
-Erreurs courantes : `400` validation, `401` authentification, `404` ressource, `409` email déjà utilisé.
+Erreurs courantes : `400` validation, `401` authentification, `404` ressource, `409` email déjà utilisé, `410` ancienne piste à réimporter dans GridFS.
