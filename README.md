@@ -3,6 +3,9 @@
 Ce dépôt contient uniquement les ressources nécessaires aux trois TP :
 `backend/` et `frontend-starter/`, ainsi que les sujets et documents utiles.
 
+## Groupe
+### Louis Huguet
+
 ## Prérequis
 
 - Node.js 22 ou plus récent ;
