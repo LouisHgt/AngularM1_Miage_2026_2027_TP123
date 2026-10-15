@@ -75,6 +75,7 @@
             </div>
             <div class="track-actions">
               <button type="button" (click)="play(track)" [attr.aria-label]="'Lire ' + track.title">▶ Lire</button>
+              <a class="button-link" [routerLink]="['/studio', track.id]">Ouvrir dans le studio</a>
               <button
                 type="button"
                 class="danger"
