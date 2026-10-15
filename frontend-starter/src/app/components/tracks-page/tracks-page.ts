@@ -4,6 +4,7 @@ import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatDialog } from '@angular/material/dialog';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { RouterLink } from '@angular/router';
 import { Track } from '../../shared/models/track.model';
 import { IDLE_UPLOAD, UploadState } from '../../shared/models/upload-state.model';
 import { FileSizePipe } from '../../shared/pipes/file-size.pipe';
@@ -14,7 +15,7 @@ import { validateAudioFile } from '../../shared/utils/audio-file';
 import { ConfirmDialogComponent, ConfirmDialogData } from '../confirm-dialog/confirm-dialog';
 
 @Component({
-  imports: [ReactiveFormsModule, DatePipe, FileSizePipe, MatProgressBarModule],
+  imports: [ReactiveFormsModule, DatePipe, FileSizePipe, MatProgressBarModule, RouterLink],
   templateUrl: './tracks-page.html',
   styleUrl: './tracks-page.css',
 })

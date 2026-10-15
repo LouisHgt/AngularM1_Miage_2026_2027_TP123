@@ -1,0 +1,23 @@
+<section>
+  <a routerLink="/tracks">← Retour à la bibliothèque</a>
+  <div class="hero">
+    <p class="eyebrow">STUDIO</p>
+    <h1>Studio audio</h1>
+    <p>La piste est chargée et prête pour les prochaines fonctions du studio.</p>
+  </div>
+
+  @if (loading()) {
+    <p role="status">Chargement de la piste…</p>
+  } @else if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+  } @else {
+    <div class="card">
+      <h2>Pistes chargées</h2>
+      <ul>
+        @for (track of studio.tracks(); track track.id) {
+          <li>{{ track.name }} <small>({{ track.kind }})</small></li>
+        }
+      </ul>
+    </div>
+  }
+</section>
