@@ -68,7 +68,7 @@ On garde une interface accessible : chaque bouton rotatif est un vrai contrôle 
 | Vitesse et tonalité | `signalsmith-stretch` (AudioWorklet) | `playbackRate` seul change aussi la hauteur |
 | Visualisation | `AnalyserNode` dessiné dans un `<canvas>` avec `requestAnimationFrame` | vu-mètres et spectre en temps réel |
 | Sauvegarde des prises | upload via `TrackService.upload()` existant, au format `audio/webm` (Opus) | un WAV de 3 minutes dépasse la limite de 25 Mo du backend |
-| Backend | **une seule modification** : accepter `audio/webm` dans la liste des types MIME, avec un test backend | c'est le format natif de `MediaRecorder` dans Chrome |
+| Backend | Stockage partagé des audios dans MongoDB GridFS, et acceptation de `audio/webm` dans la liste des types MIME, avec tests backend | les fichiers sont accessibles depuis tous les postes connectés au même backend et au même cluster |
 | Architecture Angular | services dans `src/app/shared`, Signals, route `/studio/:id` en lazy loading | normes des TD (`best-practices.md`) |
 
 ### Tests et rapport

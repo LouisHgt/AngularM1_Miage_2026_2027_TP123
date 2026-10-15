@@ -33,7 +33,7 @@ test("schémas Mongoose et relation", () => {
     ownerId: new mongoose.Types.ObjectId(),
     title: "Blues",
     originalName: "b.mp3",
-    storedName: "x.mp3",
+    gridFsId: new mongoose.Types.ObjectId(),
     mimeType: "audio/mpeg",
     size: 42,
   });
