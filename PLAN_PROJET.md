@@ -94,7 +94,8 @@ Deux axes qui se touchent le moins possible. Leur seul point de contact est le *
 - `AudioContextService` et `StudioStore` (Signal `tracks`, `addTrack()`, `removeTrack()`).
 - Route lazy `/studio/:id` protégée par `authGuard` : chargement de la piste via `TrackService.audio(id)`, puis `decodeAudioData`, puis ajout dans le store.
 - Bouton « Ouvrir dans le studio » sur les cards de la bibliothèque.
-- Les premiers tests (store et chargement), le squelette de `REPORT.md`, une fusion sur `main`.
+- Les premiers tests (store et chargement), le squelette de `REPORT.md`.
+- Branche `feat/commun-studio-skeleton` créée depuis `dev`, pull request vers `dev`, puis `git merge dev` dans `dev-louis` et `dev-remi`.
 
 ### Membre A : lecture, mixage et effets
 
@@ -122,8 +123,22 @@ La séparation IA (B1) est la partie la plus risquée : modèle lourd, temps de 
 
 ### Règles de travail
 
-- Une branche par mission (`feat/a1-playback-engine`, `feat/b1-stem-separation`…), une pull request vers `main`.
-- **Relecture croisée** de chaque pull request par l'autre membre : chacun doit pouvoir expliquer tout le projet.
+- **Branches** :
+
+  ```text
+  main                      ← rendus (fusion de dev à la fin de chaque TP)
+   └── dev                  ← intégration, toujours buildable et testée
+        ├── feat/commun-*   ← travail commun (étape 0, modèles partagés) : PR directe vers dev
+        ├── dev-louis       ← branche personnelle de Louis
+        │    └── feat/<mission>   ← PR vers dev-louis
+        └── dev-remi        ← branche personnelle de Rémi
+             └── feat/<mission>   ← PR vers dev-remi
+  ```
+
+  - Une branche `feat/` par mission (`feat/a1-playback-engine`, `feat/b1-stem-separation`…), créée depuis la branche personnelle et fusionnée dedans par pull request.
+  - Quand une mission est terminée (tests et build verts), la branche personnelle est fusionnée dans `dev` par pull request.
+  - Après chaque fusion commune, chacun récupère `dev` dans sa branche personnelle (`git merge dev`) pour rester à jour, en particulier sur `StudioStore` et `AudioEffect`.
+- **Relecture croisée** des pull requests vers `dev` par l'autre membre : chacun doit pouvoir expliquer tout le projet.
 - Les composants n'appellent jamais `HttpClient` ni la Web Audio API directement : tout passe par les services.
 - Nettoyage dans `DestroyRef.onDestroy` : arrêter les sources, fermer le micro, terminer le Worker, révoquer les ObjectURL.
 - Ne jamais logger le JWT ni le mot de passe.
