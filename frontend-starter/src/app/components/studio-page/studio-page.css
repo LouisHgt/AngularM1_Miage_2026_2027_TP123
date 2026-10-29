@@ -4,3 +4,22 @@ section { display: grid; gap: 1rem; }
 .card { padding: 1rem; }
 .card ul { margin: 0; padding-left: 1.2rem; }
 .error { color: #b3261e; }
+:host {
+  display: block;
+}
+
+.separation-card {
+  margin-bottom: 1rem;
+}
+
+select {
+  padding: 0.7rem;
+  border: 1px solid #b8cbc5;
+  border-radius: 8px;
+}
+
+progress {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+}

@@ -2,6 +2,8 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, from, of, switchMap, take } from 'rxjs';
 import { AudioContextService } from '../../shared/services/audio-context.service';
+import { StemSeparationMode } from '../../shared/models/stem-separation.model';
+import { StemSeparationService } from '../../shared/services/stem-separation.service';
 import { StudioStore } from '../../shared/services/studio.store';
 import { TrackService } from '../../shared/services/track.service';
 import { apiErrorMessage } from '../../shared/utils/api-error';
@@ -15,11 +17,14 @@ export class StudioPageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly trackService = inject(TrackService);
   private readonly audioContext = inject(AudioContextService);
+  readonly stemSeparation = inject(StemSeparationService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly studio = inject(StudioStore);
   readonly loading = signal(true);
   readonly error = signal('');
+  readonly selectedSeparationMode = signal<StemSeparationMode>('fast');
+  readonly separationError = signal('');
 
   constructor() {
     const subscription = this.route.paramMap
@@ -65,5 +70,23 @@ export class StudioPageComponent {
         },
       });
     this.destroyRef.onDestroy(() => subscription.unsubscribe());
+    this.destroyRef.onDestroy(() => this.stemSeparation.dispose());
+  }
+
+  separateOriginal(): void {
+    const original = this.studio.tracks().find((track) => track.kind === 'original');
+    if (!original) {
+      this.separationError.set('Aucune piste originale n’est disponible.');
+      return;
+    }
+
+    this.separationError.set('');
+    this.stemSeparation
+      .separate(original.id, this.selectedSeparationMode())
+      .catch((separationError: unknown) => {
+        this.separationError.set(
+          separationError instanceof Error ? separationError.message : 'La séparation a échoué.',
+        );
+      });
   }
 }

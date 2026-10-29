@@ -11,6 +11,38 @@
   } @else if (error()) {
     <p class="error" role="alert">{{ error() }}</p>
   } @else {
+    <div class="card separation-card">
+      <h2>Séparer les stems</h2>
+      <p>Choisis le compromis entre vitesse et précision avant de lancer le modèle IA.</p>
+      <label>
+        Traitement
+        <select
+          [value]="selectedSeparationMode()"
+          (change)="selectedSeparationMode.set($any($event.target).value)"
+          [disabled]="stemSeparation.status() === 'running'"
+        >
+          <option value="fast">Rapide</option>
+          <option value="quality">Qualité (plus lent)</option>
+        </select>
+      </label>
+      <button
+        type="button"
+        (click)="separateOriginal()"
+        [disabled]="stemSeparation.status() === 'running'"
+      >
+        {{ stemSeparation.status() === 'running' ? 'Séparation en cours…' : 'Lancer la séparation' }}
+      </button>
+      @if (stemSeparation.status() === 'running') {
+        <p role="status">{{ stemSeparation.message() }} ({{ stemSeparation.progress() }} %)</p>
+        <progress [value]="stemSeparation.progress()" max="100"></progress>
+      }
+      @if (stemSeparation.status() === 'done') {
+        <p class="success" role="status">{{ stemSeparation.message() }}</p>
+      }
+      @if (separationError()) {
+        <p class="error" role="alert">{{ separationError() }}</p>
+      }
+    </div>
     <div class="card">
       <h2>Pistes chargées</h2>
       <ul>
