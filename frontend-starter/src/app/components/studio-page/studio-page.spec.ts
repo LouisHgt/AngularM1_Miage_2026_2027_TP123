@@ -43,6 +43,20 @@ describe('StudioPageComponent', () => {
     expect(component.error()).toBe('');
   });
 
+  it('ne conserve pas les pistes d’un morceau précédemment ouvert', async () => {
+    audio.mockReturnValue(of(new Blob(['audio'], { type: 'audio/mpeg' })));
+    TestBed.inject(StudioStore).addTrack({
+      id: 'ancien',
+      name: 'Ancien',
+      kind: 'original',
+      buffer: BUFFER,
+    });
+    fixture = TestBed.createComponent(StudioPageComponent);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.studio.tracks().map((track) => track.id)).toEqual(['track-1']);
+  });
+
   it('affiche une erreur si le téléchargement échoue', async () => {
     audio.mockReturnValue(
       throwError(

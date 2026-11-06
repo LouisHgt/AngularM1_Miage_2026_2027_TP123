@@ -23,3 +23,9 @@ progress {
   width: 100%;
   margin-top: 0.75rem;
 }
+
+.preview-button {
+  margin-left: 0.5rem;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+}

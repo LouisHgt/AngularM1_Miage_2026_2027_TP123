@@ -5,6 +5,7 @@ import { AudioContextService } from '../../shared/services/audio-context.service
 import { StemSeparationMode } from '../../shared/models/stem-separation.model';
 import { StemSeparationService } from '../../shared/services/stem-separation.service';
 import { StudioStore } from '../../shared/services/studio.store';
+import { TrackPreviewService } from '../../shared/services/track-preview.service';
 import { TrackService } from '../../shared/services/track.service';
 import { apiErrorMessage } from '../../shared/utils/api-error';
 
@@ -18,6 +19,7 @@ export class StudioPageComponent {
   private readonly trackService = inject(TrackService);
   private readonly audioContext = inject(AudioContextService);
   readonly stemSeparation = inject(StemSeparationService);
+  readonly preview = inject(TrackPreviewService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly studio = inject(StudioStore);
@@ -27,6 +29,9 @@ export class StudioPageComponent {
   readonly separationError = signal('');
 
   constructor() {
+    // Le store est un singleton : on repart d'un studio vide pour ne montrer que le morceau ouvert.
+    this.preview.stop();
+    this.studio.clear();
     const subscription = this.route.paramMap
       .pipe(
         take(1),
@@ -71,6 +76,10 @@ export class StudioPageComponent {
       });
     this.destroyRef.onDestroy(() => subscription.unsubscribe());
     this.destroyRef.onDestroy(() => this.stemSeparation.dispose());
+    this.destroyRef.onDestroy(() => {
+      this.preview.stop();
+      this.studio.clear();
+    });
   }
 
   separateOriginal(): void {

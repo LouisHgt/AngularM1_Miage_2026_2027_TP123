@@ -1,3 +1,4 @@
+import { MixerState } from '../models/mixer-state.model';
 import { StudioTrack } from '../models/studio-track.model';
 import { StudioStore } from './studio.store';
 
@@ -40,5 +41,14 @@ describe('StudioStore', () => {
       mutedTrackIds: [],
       soloTrackIds: [],
     });
+  });
+
+  it('clear() vide les pistes et réinitialise le mixeur', () => {
+    const store = new StudioStore();
+    store.addTrack({ id: 'a', name: 'A', kind: 'original', buffer: {} as AudioBuffer });
+    store.mixer.update((state: MixerState) => ({ ...state, selectedTrackId: 'a' }));
+    store.clear();
+    expect(store.tracks()).toEqual([]);
+    expect(store.mixer().selectedTrackId).toBeNull();
   });
 });

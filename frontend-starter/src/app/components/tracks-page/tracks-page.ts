@@ -130,7 +130,11 @@ export class TracksPageComponent {
       },
       error: (error: unknown) => {
         console.error('[TracksPage] Lecture impossible');
-        this.audioError.set(apiErrorMessage(error, 'Lecture impossible'));
+        this.audioError.set(
+          error instanceof HttpErrorResponse && error.status === 410
+            ? 'Cette piste est orpheline : son fichier audio n’existe plus. Supprimez-la puis réimportez le fichier.'
+            : apiErrorMessage(error, 'Lecture impossible'),
+        );
       },
     });
   }
@@ -176,10 +180,17 @@ export class TracksPageComponent {
       },
       error: (error: unknown) => {
         this.deletingId.set(null);
-        if (error instanceof HttpErrorResponse && error.status === 404) {
-          // Deleted elsewhere (another tab) or not owned by this user: the list is simply refreshed.
-          console.warn('[TracksPage] Piste déjà supprimée ou inaccessible', track.id);
-          this.notify.error('Cette piste n’existe plus : la liste a été actualisée.');
+        if (
+          error instanceof HttpErrorResponse &&
+          (error.status === 404 || error.status === 410)
+        ) {
+          // A 410 means the metadata survived while its GridFS file did not.
+          console.warn('[TracksPage] Nettoyage d’une piste inaccessible', track.id);
+          this.notify.error(
+            error.status === 410
+              ? 'Le fichier audio est absent : la piste orpheline a été supprimée.'
+              : 'Cette piste n’existe plus : la liste a été actualisée.',
+          );
           this.reloadAfterRemoval();
           return;
         }

@@ -30,6 +30,12 @@ export class StudioStore {
     });
   }
 
+  /** Vide le studio : à appeler quand on ouvre ou quitte le studio d'un morceau. */
+  clear(): void {
+    this.tracks.set([]);
+    this.mixer.set(INITIAL_MIXER_STATE);
+  }
+
   removeTrack(id: string): void {
     this.tracks.update((tracks) => tracks.filter((track) => track.id !== id));
     this.mixer.update((state) => ({

@@ -47,9 +47,17 @@
       <h2>Pistes chargées</h2>
       <ul>
         @for (track of studio.tracks(); track track.id) {
-          <li>{{ track.name }} <small>({{ track.kind }})</small></li>
+          <li>
+            {{ track.name }} <small>({{ track.kind }})</small>
+            <button type="button" class="preview-button" (click)="preview.toggle(track)">
+              {{ preview.playingId() === track.id ? '⏹ Stop' : '▶ Écouter' }}
+            </button>
+          </li>
         }
       </ul>
+      @if (preview.error()) {
+        <p class="error" role="alert">{{ preview.error() }}</p>
+      }
     </div>
   }
 </section>

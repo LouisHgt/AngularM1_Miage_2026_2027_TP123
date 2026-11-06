@@ -13,10 +13,10 @@ export const STEM_SEPARATION_MODELS: Record<StemSeparationMode, StemSeparationMo
     label: 'Rapide',
     description: 'Modèle léger, idéal pour tester rapidement un morceau.',
     modelUrls: [
-      'https://github.com/LouisHgt/AngularM1_Miage_2026_2027_TP123/releases/download/v1.0-models/vocals.fp16.onnx',
-      'https://github.com/LouisHgt/AngularM1_Miage_2026_2027_TP123/releases/download/v1.0-models/drums.fp16.onnx',
-      'https://github.com/LouisHgt/AngularM1_Miage_2026_2027_TP123/releases/download/v1.0-models/bass.fp16.onnx',
-      'https://github.com/LouisHgt/AngularM1_Miage_2026_2027_TP123/releases/download/v1.0-models/other.fp16.onnx',
+      '/api/models/vocals.fp16.onnx',
+      '/api/models/drums.fp16.onnx',
+      '/api/models/bass.fp16.onnx',
+      '/api/models/other.fp16.onnx',
     ],
   },
   quality: {
@@ -24,7 +24,7 @@ export const STEM_SEPARATION_MODELS: Record<StemSeparationMode, StemSeparationMo
     label: 'Qualité',
     description: 'Modèle plus précis, mais plus long à télécharger et à exécuter.',
     modelUrls: [
-      'https://github.com/LouisHgt/AngularM1_Miage_2026_2027_TP123/releases/download/v1.0-models/htdemucs.onnx',
+      '/api/models/htdemucs.onnx',
     ],
   },
 };
@@ -91,8 +91,16 @@ export class StemSeparationService {
         try {
           const context = this.audioContext.getOrCreate();
           for (const stem of data.stems) {
-            const buffer = context.createBuffer(1, stem.samples.length, track.buffer.sampleRate);
-            buffer.copyToChannel(new Float32Array(stem.samples), 0);
+            const buffer = context.createBuffer(
+              stem.channels.length,
+              stem.channels[0]?.length ?? 0,
+              stem.sampleRate,
+            );
+            stem.channels.forEach((channel, index) => {
+              const copy = new Float32Array(channel.length);
+              copy.set(channel);
+              buffer.copyToChannel(copy, index);
+            });
             this.studio.addTrack({
               id: `${track.id}-${stem.name}`,
               name: `${track.name} — ${STEM_LABELS[stem.name]}`,
@@ -109,7 +117,12 @@ export class StemSeparationService {
           this.fail(worker, error instanceof Error ? error.message : 'Création des stems impossible.', reject);
         }
       };
-      worker.onerror = () => this.fail(worker, 'La séparation IA a échoué.', reject);
+      worker.onerror = (event) =>
+        this.fail(
+          worker,
+          event.message ? `Erreur du Worker de séparation : ${event.message}` : 'La séparation IA a échoué.',
+          reject,
+        );
 
       const channels = Array.from({ length: track.buffer.numberOfChannels }, (_, index) =>
         track.buffer.getChannelData(index).slice(),

@@ -8,6 +8,15 @@ import { User } from "./models/User.js";
 import { Track } from "./models/Track.js";
 
 const GRIDFS_BUCKET = "audio";
+const MODEL_RELEASE_BASE =
+  "https://github.com/LouisHgt/AngularM1_Miage_2026_2027_TP123/releases/download/v1.0-models";
+const MODEL_FILES = new Set([
+  "vocals.fp16.onnx",
+  "drums.fp16.onnx",
+  "bass.fp16.onnx",
+  "other.fp16.onnx",
+  "htdemucs.onnx",
+]);
 
 function getAudioBucket() {
   const database = mongoose.connection.db;
@@ -137,6 +146,32 @@ export function createApp() {
   app.get("/api/health", (_req, res) => {
     console.log("[health] Vérification de l'API");
     res.json({ status: "ok" });
+  });
+
+  /** Proxifie uniquement les modèles autorisés pour éviter le blocage CORS de GitHub Releases. */
+  app.get("/api/models/:name", async (req, res, next) => {
+    const { name } = req.params;
+    if (!MODEL_FILES.has(name)) {
+      return res.status(404).json({ message: "Modèle inconnu" });
+    }
+
+    try {
+      const upstream = await fetch(`${MODEL_RELEASE_BASE}/${name}`);
+      if (!upstream.ok || !upstream.body) {
+        console.error(`[models] Modèle indisponible : ${name} (${upstream.status})`);
+        return res.status(502).json({ message: "Modèle IA indisponible" });
+      }
+
+      res.type("application/octet-stream");
+      const contentLength = upstream.headers.get("content-length");
+      if (contentLength) {
+        res.setHeader("Content-Length", contentLength);
+      }
+      Readable.fromWeb(upstream.body).pipe(res);
+    } catch (error) {
+      console.error(`[models] Proxy impossible pour ${name}`, error);
+      next(error);
+    }
   });
 
   /** Requête POST pour "insertion" de donnée.
@@ -413,9 +448,11 @@ export function createApp() {
         return res.status(404).json({ message: "Piste inconnue" });
       }
       if (!track.gridFsId) {
-        return res.status(410).json({
-          message: "Cette piste doit être réimportée dans le stockage partagé",
-        });
+        console.warn(
+          `[tracks] Suppression de la métadonnée orpheline : ${track.id}`,
+        );
+        await Track.deleteOne({ _id: track._id });
+        return res.status(204).end();
       }
 
       try {

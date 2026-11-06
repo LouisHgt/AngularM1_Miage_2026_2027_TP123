@@ -11,7 +11,13 @@ export interface StemSeparationModel {
 
 export interface StemResult {
   name: StemName;
-  samples: Float32Array;
+  channels: Float32Array[];
+  sampleRate: number;
+}
+
+export interface SeparationAudio {
+  sampleRate: number;
+  channels: Float32Array[];
 }
 
 export interface StemSeparationRequest {
@@ -21,6 +27,9 @@ export interface StemSeparationRequest {
   channels: Float32Array[];
 }
 
+/** Callback de progression global (0-100) émis pendant `separate`. */
+export type StemProgressCallback = (progress: number, message: string) => void;
+
 /**
  * Strategy shared by the Worker implementations.
  * Each strategy normalizes its model-specific output to the four application stems.
@@ -29,7 +38,12 @@ export interface StemSeparationStrategy {
   mode: StemSeparationMode;
   label: string;
   loadModels(): Promise<void>;
-  separate(audioBuffer: AudioBuffer): Promise<Record<StemName, AudioBuffer>>;
+  getTensorSummary(): string;
+  validateModelContract(): Promise<string>;
+  separate(
+    audio: SeparationAudio,
+    onProgress?: StemProgressCallback,
+  ): Promise<ReadonlyArray<StemResult>>;
 }
 
 export type StemWorkerMessage =
