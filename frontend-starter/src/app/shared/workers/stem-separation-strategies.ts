@@ -34,6 +34,11 @@ abstract class OnnxStemStrategy implements StemSeparationStrategy {
   protected abstract readonly model: StemSeparationModel;
   protected sessions: ort.InferenceSession[] = [];
 
+  /** Options de création des sessions ; surchargeables par modèle. */
+  protected sessionOptions(): ort.InferenceSession.SessionOptions {
+    return { executionProviders: ['wasm'] };
+  }
+
   async loadModels(): Promise<void> {
     if (this.model.modelUrls.some((url) => !url)) {
       throw new Error(`Les artefacts du modèle ${this.label.toLowerCase()} ne sont pas configurés.`);
@@ -44,9 +49,7 @@ abstract class OnnxStemStrategy implements StemSeparationStrategy {
       const cacheKey = `${MODEL_CACHE_VERSION}:${this.mode}:${index}:${url}`;
       const bytes = await this.loadModelBytes(url, cacheKey);
       this.sessions.push(
-        await ort.InferenceSession.create(bytes, {
-          executionProviders: ['wasm'],
-        }),
+        await ort.InferenceSession.create(bytes, this.sessionOptions()),
       );
     }
   }
@@ -125,15 +128,193 @@ abstract class OnnxStemStrategy implements StemSeparationStrategy {
   }
 }
 
+/** Taille de segment du modèle htdemucs exporté : 7,8 s à 44 100 Hz. */
+export const DEMUCS_SEGMENT_SAMPLES = 343980;
+/** Chevauchement entre segments, fondu par une fenêtre triangulaire. */
+const DEMUCS_OVERLAP = 0.25;
+/** Ordre des sorties de htdemucs. */
+const DEMUCS_STEM_ORDER: StemResult['name'][] = ['drums', 'bass', 'other', 'vocals'];
+
 export class DemucsStrategy extends OnnxStemStrategy {
   readonly mode = 'quality' as const;
   readonly label = 'Qualité';
   protected readonly model = {
     mode: this.mode,
     label: this.label,
-    description: 'Demucs v4 monolithique, une session ONNX et quatre sorties.',
+    description: `Demucs v4 monolithique, une session ONNX et quatre sorties.`,
     modelUrls: [`${MODEL_PROXY_BASE}/htdemucs.onnx`],
   };
+
+  /**
+   * Les optimisations de graphe d'ONNX Runtime dupliquent les poids (316 Mo) et
+   * dépassent la mémoire WASM (`std::bad_alloc` à la création de la session,
+   * reproduit en Node). Sans optimisation, la session se crée (~1,4 Go) et l'inférence passe.
+   */
+  protected override sessionOptions(): ort.InferenceSession.SessionOptions {
+    return {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'disabled',
+      enableCpuMemArena: false,
+      enableMemPattern: false,
+    };
+  }
+
+  /** Vérifie les métadonnées sans exécuter le modèle (une inférence de sonde coûterait plusieurs secondes). */
+  override async validateModelContract(): Promise<string> {
+    const session = this.sessions[0];
+    const input = session?.inputMetadata[0];
+    const shape = input?.isTensor ? input.shape : [];
+    if (
+      !input?.isTensor ||
+      input.type !== 'float32' ||
+      shape.length !== 3 ||
+      shape[1] !== 2 ||
+      shape[2] !== DEMUCS_SEGMENT_SAMPLES
+    ) {
+      throw new Error(
+        `Le modèle Demucs n'a pas le contrat attendu [1, 2, ${DEMUCS_SEGMENT_SAMPLES}] (reçu : [${shape.join(', ')}]).`,
+      );
+    }
+    return `Demucs : contrat vérifié, segments de ${DEMUCS_SEGMENT_SAMPLES} échantillons.`;
+  }
+
+  /**
+   * Séparation par segments de 7,8 s avec 25 % de chevauchement et fondu triangulaire.
+   * Le signal est normalisé (moyenne/écart-type du mono) comme à l'entraînement, puis
+   * dénormalisé en sortie. Le morceau entier est traité.
+   */
+  override async separate(
+    audio: SeparationAudio,
+    onProgress: StemProgressCallback = () => undefined,
+  ): Promise<ReadonlyArray<StemResult>> {
+    const session = this.sessions[0];
+    if (!session) {
+      throw new Error('Le modèle Demucs doit être chargé avant la séparation.');
+    }
+    let lastProgress = 0;
+    const report = (progress: number, message: string): void => {
+      lastProgress = Math.max(lastProgress, Math.min(99, Math.round(progress * 10) / 10));
+      onProgress(lastProgress, message);
+    };
+
+    report(30, "Préparation de l'audio (stéréo, 44 100 Hz)…");
+    const resampled = resampleStereo(
+      normalizeStereo(audio.channels),
+      audio.sampleRate,
+      SPLEETER_SAMPLE_RATE,
+    );
+    if (resampled[1].length !== resampled[0].length) {
+      throw new Error('Les deux canaux audio ont des longueurs différentes.');
+    }
+    const channels = resampled;
+    const length = channels[0].length;
+
+    let sum = 0;
+    for (let index = 0; index < length; index += 1) {
+      sum += (channels[0][index] + channels[1][index]) / 2;
+    }
+    const mean = sum / length;
+    let variance = 0;
+    for (let index = 0; index < length; index += 1) {
+      const deviation = (channels[0][index] + channels[1][index]) / 2 - mean;
+      variance += deviation * deviation;
+    }
+    const deviation = Math.max(Math.sqrt(variance / length), 1e-8);
+
+    const stride = Math.floor(DEMUCS_SEGMENT_SAMPLES * (1 - DEMUCS_OVERLAP));
+    const segmentCount = Math.max(1, Math.ceil((length - DEMUCS_SEGMENT_SAMPLES) / stride) + 1);
+    report(
+      33,
+      `Audio prêt : ${(length / SPLEETER_SAMPLE_RATE).toFixed(1)} s, ${segmentCount} segment(s).`,
+    );
+
+    const weightWindow = new Float32Array(DEMUCS_SEGMENT_SAMPLES);
+    const half = Math.floor(DEMUCS_SEGMENT_SAMPLES / 2);
+    for (let index = 0; index < DEMUCS_SEGMENT_SAMPLES; index += 1) {
+      weightWindow[index] =
+        index < half ? index + 1 : DEMUCS_SEGMENT_SAMPLES - index;
+    }
+    const accumulators = DEMUCS_STEM_ORDER.map(() => [
+      new Float32Array(length),
+      new Float32Array(length),
+    ]);
+    const weightSum = new Float32Array(length);
+
+    for (let segment = 0; segment < segmentCount; segment += 1) {
+      const start = segment * stride;
+      const valid = Math.min(DEMUCS_SEGMENT_SAMPLES, length - start);
+      const label = `Segment ${segment + 1}/${segmentCount}`;
+      const at = (fraction: number): number => 35 + (55 * (segment + fraction)) / segmentCount;
+
+      report(at(0), `${label} : préparation de l'entrée…`);
+      const inputData = new Float32Array(2 * DEMUCS_SEGMENT_SAMPLES);
+      for (let channel = 0; channel < 2; channel += 1) {
+        for (let index = 0; index < valid; index += 1) {
+          inputData[channel * DEMUCS_SEGMENT_SAMPLES + index] =
+            (channels[channel][start + index] - mean) / deviation;
+        }
+      }
+      const input = new ort.Tensor('float32', inputData, [1, 2, DEMUCS_SEGMENT_SAMPLES]);
+      const outputs: ort.Tensor[] = [];
+      try {
+        report(at(0.1), `${label} : inférence Demucs (peut prendre plusieurs dizaines de secondes)…`);
+        const result = await session.run({ [session.inputNames[0]]: input });
+        for (const output of Object.values(result)) {
+          outputs.push(output);
+        }
+        const value = result[session.outputNames[0]];
+        if (!value || value.type !== 'float32' || !(value.data instanceof Float32Array)) {
+          throw new Error('La sortie Demucs n\'est pas un tenseur float32.');
+        }
+        if (value.data.length !== 4 * 2 * DEMUCS_SEGMENT_SAMPLES) {
+          throw new Error('La sortie Demucs a une taille inattendue.');
+        }
+        if (value.data.some((sample) => !Number.isFinite(sample))) {
+          throw new Error('La sortie Demucs contient des valeurs invalides.');
+        }
+
+        report(at(0.9), `${label} : assemblage du segment…`);
+        for (let stem = 0; stem < 4; stem += 1) {
+          for (let channel = 0; channel < 2; channel += 1) {
+            const base = (stem * 2 + channel) * DEMUCS_SEGMENT_SAMPLES;
+            const target = accumulators[stem][channel];
+            for (let index = 0; index < valid; index += 1) {
+              target[start + index] += value.data[base + index] * weightWindow[index];
+            }
+          }
+        }
+        for (let index = 0; index < valid; index += 1) {
+          weightSum[start + index] += weightWindow[index];
+        }
+      } finally {
+        input.dispose();
+        for (const output of outputs) {
+          output.dispose();
+        }
+      }
+    }
+
+    report(91, 'Assemblage du résultat : dénormalisation…');
+    const results: StemResult[] = DEMUCS_STEM_ORDER.map((name) => ({
+      name,
+      channels: [],
+      sampleRate: SPLEETER_SAMPLE_RATE,
+    }));
+    for (let stem = 0; stem < 4; stem += 1) {
+      for (let channel = 0; channel < 2; channel += 1) {
+        const accumulator = accumulators[stem][channel];
+        const samples = new Float32Array(length);
+        for (let index = 0; index < length; index += 1) {
+          samples[index] =
+            weightSum[index] > 0 ? (accumulator[index] / weightSum[index]) * deviation + mean : 0;
+        }
+        accumulators[stem][channel] = new Float32Array(0);
+        results[stem].channels.push(samples);
+      }
+    }
+    report(95, 'Stems assemblés.');
+    return results;
+  }
 }
 
 export class SpleeterStrategy extends OnnxStemStrategy {
