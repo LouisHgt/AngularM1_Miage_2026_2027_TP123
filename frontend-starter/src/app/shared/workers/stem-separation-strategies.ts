@@ -302,14 +302,13 @@ export class DemucsStrategy extends OnnxStemStrategy {
     }));
     for (let stem = 0; stem < 4; stem += 1) {
       for (let channel = 0; channel < 2; channel += 1) {
+        // Normalisation et dénormalisation sur place : pas de seconde copie du morceau.
         const accumulator = accumulators[stem][channel];
-        const samples = new Float32Array(length);
         for (let index = 0; index < length; index += 1) {
-          samples[index] =
+          accumulator[index] =
             weightSum[index] > 0 ? (accumulator[index] / weightSum[index]) * deviation + mean : 0;
         }
-        accumulators[stem][channel] = new Float32Array(0);
-        results[stem].channels.push(samples);
+        results[stem].channels.push(accumulator);
       }
     }
     report(95, 'Stems assemblés.');
@@ -496,14 +495,16 @@ export class SpleeterStrategy extends OnnxStemStrategy {
     }));
     for (let stemIndex = 0; stemIndex < 4; stemIndex += 1) {
       for (let channel = 0; channel < 2; channel += 1) {
+        // Normalisation sur place : pas de seconde copie du morceau. Le résultat est une
+        // vue sur l'accumulateur (sans le padding avant), transférable telle quelle.
         const accumulator = accumulators[stemIndex][channel];
-        const samples = new Float32Array(sampleCount);
         for (let index = 0; index < sampleCount; index += 1) {
           const padded = FRONT_PADDING + index;
-          samples[index] = weights[padded] > 1e-8 ? accumulator[padded] / weights[padded] : 0;
+          accumulator[padded] = weights[padded] > 1e-8 ? accumulator[padded] / weights[padded] : 0;
         }
-        accumulators[stemIndex][channel] = new Float32Array(0);
-        results[stemIndex].channels.push(samples);
+        results[stemIndex].channels.push(
+          accumulator.subarray(FRONT_PADDING, FRONT_PADDING + sampleCount),
+        );
       }
       report(92 + stemIndex, `Assemblage du résultat : ${STEM_NAMES[stemIndex]}…`);
     }

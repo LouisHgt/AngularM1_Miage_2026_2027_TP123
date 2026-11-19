@@ -3,7 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { catchError, from, of, switchMap, take } from 'rxjs';
 import { AudioContextService } from '../../shared/services/audio-context.service';
 import { StemSeparationMode } from '../../shared/models/stem-separation.model';
-import { StemSeparationService } from '../../shared/services/stem-separation.service';
+import { STEM_SEPARATION_MODELS, StemSeparationService } from '../../shared/services/stem-separation.service';
 import { StudioStore } from '../../shared/services/studio.store';
 import { TrackPreviewService } from '../../shared/services/track-preview.service';
 import { TrackService } from '../../shared/services/track.service';
@@ -32,6 +32,7 @@ export class StudioPageComponent {
     // Le store est un singleton : on repart d'un studio vide pour ne montrer que le morceau ouvert.
     this.preview.stop();
     this.studio.clear();
+    this.stemSeparation.reset();
     const subscription = this.route.paramMap
       .pipe(
         take(1),
@@ -66,6 +67,7 @@ export class StudioPageComponent {
               kind: 'original',
               buffer: result.buffer,
             });
+            void this.stemSeparation.restoreDraft(result.id);
           }
           this.loading.set(false);
         },
@@ -80,6 +82,23 @@ export class StudioPageComponent {
       this.preview.stop();
       this.studio.clear();
     });
+  }
+
+  draftLabel(): string {
+    const draft = this.stemSeparation.draft();
+    if (!draft) {
+      return '';
+    }
+    const mode = STEM_SEPARATION_MODELS[draft.mode].label.toLowerCase();
+    return `Brouillon enregistré dans ce navigateur (mode ${mode}, ${new Date(draft.savedAt).toLocaleString('fr-FR')}).`;
+  }
+
+  deleteDraft(): void {
+    const original = this.studio.tracks().find((track) => track.kind === 'original');
+    if (original) {
+      this.preview.stop();
+      void this.stemSeparation.deleteDraft(original.id);
+    }
   }
 
   formatTime(seconds: number): string {

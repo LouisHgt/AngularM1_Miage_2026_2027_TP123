@@ -42,6 +42,23 @@
       @if (separationError()) {
         <p class="error" role="alert">{{ separationError() }}</p>
       }
+      @if (stemSeparation.draft()) {
+        <p class="draft-info" role="status">{{ draftLabel() }}</p>
+        <button
+          type="button"
+          class="danger-button"
+          (click)="deleteDraft()"
+          [disabled]="stemSeparation.status() === 'running'"
+        >
+          Supprimer le brouillon
+        </button>
+      }
+      @if (stemSeparation.draftNotice()) {
+        <p class="draft-info" role="status">{{ stemSeparation.draftNotice() }}</p>
+      }
+      @if (stemSeparation.draftError()) {
+        <p class="error" role="alert">{{ stemSeparation.draftError() }}</p>
+      }
     </div>
     <div class="card">
       <h2>Pistes chargées</h2>

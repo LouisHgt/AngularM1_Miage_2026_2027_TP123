@@ -172,8 +172,51 @@ le message d'origine.
   vérifié dans un navigateur par cet assistant** : à confirmer manuellement (voir
   procédure). Si le Worker charge les modèles et exécute les inférences (progression
   > 30 %), le message est non bloquant.
-- Le build Angular n'émet aucun avertissement Vite sur l'import dynamique d'ORT
-  (build réussi, aucune erreur).
+- Le build Angular de production n'émet aucun avertissement. En revanche, `ng serve`
+  affichait « Prebundling has been configured but will not be used because scripts
+  optimization is enabled » et un avertissement Vite « The above dynamic import cannot be
+  analyzed » sur le `import()` d'ONNX Runtime. Cause : `angular.json` n'avait aucune
+  configuration de build, donc le serveur de développement servait un build **optimisé** ;
+  la minification supprimait le commentaire `/* @vite-ignore */` qu'ONNX Runtime place dans
+  son `import()`. Correction : configurations `production` (défaut, inchangée) et
+  `development` (sans optimisation) dans `angular.json`, et `serve` pointe sur
+  `gpc:build:development`. Vérifié : le Worker et le prébundle ONNX sont servis sans
+  aucun avertissement. Ce message n'était qu'un avertissement, jamais une erreur.
+
+### Mission B2 — Brouillon de stems dans le navigateur
+
+- Après une séparation réussie, les quatre stems (`StemResult[]`, `Float32Array` par
+  canal) sont enregistrés dans IndexedDB (base `webjam-studio`, magasin `stem-drafts`),
+  **un brouillon par identifiant de piste** : une nouvelle séparation du même morceau
+  remplace le précédent.
+- À l'ouverture du studio d'un morceau, le brouillon est rechargé automatiquement et les
+  quatre stems sont ajoutés au `StudioStore` sans relancer le Worker. Le studio affiche
+  « Brouillon enregistré dans ce navigateur (mode, date) » et un bouton
+  « Supprimer le brouillon », qui efface l'entrée IndexedDB et retire les stems du studio.
+- La base passe en version 2 (`shared/storage/studio-db.ts`) : le magasin des modèles ONNX
+  est conservé, le magasin des brouillons est créé à la mise à jour. Le thread principal
+  (`StemDraftStorage`) et le Worker (`model-cache.ts`) partagent cette seule définition.
+- Les erreurs (IndexedDB indisponible, quota dépassé, brouillon illisible) sont affichées
+  dans le studio et journalisées ; la séparation reste utilisable. Si la suppression
+  échoue, les stems restent affichés. Pas de repli silencieux.
+- Garde-fous : l'état du morceau précédent est remis à zéro à l'ouverture
+  (`StemSeparationService.reset()`), et une lecture ou écriture de brouillon qui se termine
+  après un changement de morceau n'affecte pas le studio ouvert.
+- Taille : les stems sont compactés en PCM 16 bits avec un facteur d'échelle par canal
+  (`stem-draft-codec.ts`), soit environ 170 Mo pour 4 minutes de musique stéréo (le
+  premier essai en `Float32` donnait `QuotaExceededError`, ~340 Mo). La perte est
+  inférieure à la quantification 16 bits.
+- Limite : au plus 3 brouillons (`MAX_DRAFTS`). À l'enregistrement du suivant, le plus
+  ancien est supprimé (index `savedAt`, version 3 de la base) et le studio en informe
+  l'utilisateur. Avant d'écrire, `navigator.storage.estimate()` est comparé à la taille
+  nécessaire : le message d'erreur indique les Mo nécessaires et disponibles. Le brouillon
+  reste local à ce navigateur ; un stockage serveur (GridFS) a été envisagé puis écarté
+  pour l'instant (limite de 25 Mo par fichier, quota du cluster Atlas, modification du
+  backend et de `API_CONTRACT.md`).
+- Tests : rechargement, absence de brouillon, changement de morceau pendant la lecture,
+  erreur de lecture, suppression (et échec de suppression), remise à zéro, codec 16 bits,
+  limite de 3 brouillons, quota dépassé, vérification de l'espace. La couche
+  IndexedDB elle-même n'est pas testée en environnement simulé (à vérifier à la main).
 
 ### État actuel et limites
 
@@ -185,7 +228,6 @@ Il reste à réaliser :
 
 - vérifier le pipeline Spleeter sur un fichier musical réel dans le navigateur ;
 - confirmer dans un navigateur que le message CSP `eval` est non bloquant ;
-- ajouter le cache IndexedDB des stems calculés ;
 - implémenter l’inférence Demucs ;
 - Demucs (non traité) ; les tests utilisent des sessions ONNX simulées, pas les vrais modèles ;
 - l'accumulation en sortie reste proportionnelle à la durée (8 × Float32 de la taille du morceau) ;
