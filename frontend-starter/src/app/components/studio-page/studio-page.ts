@@ -82,6 +82,11 @@ export class StudioPageComponent {
     });
   }
 
+  formatTime(seconds: number): string {
+    const total = Math.floor(seconds);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
   separateOriginal(): void {
     const original = this.studio.tracks().find((track) => track.kind === 'original');
     if (!original) {

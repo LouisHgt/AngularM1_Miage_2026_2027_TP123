@@ -52,6 +52,21 @@
             <button type="button" class="preview-button" (click)="preview.toggle(track)">
               {{ preview.playingId() === track.id ? '⏹ Stop' : '▶ Écouter' }}
             </button>
+            @if (preview.playingId() === track.id) {
+              <div class="preview-progress">
+                <span>{{ formatTime(preview.position()) }}</span>
+                <input
+                  type="range"
+                  min="0"
+                  step="0.1"
+                  [max]="preview.duration()"
+                  [value]="preview.position()"
+                  [attr.aria-label]="'Position de lecture de ' + track.name"
+                  (change)="preview.seek($any($event.target).valueAsNumber)"
+                />
+                <span>{{ formatTime(preview.duration()) }}</span>
+              </div>
+            }
           </li>
         }
       </ul>
